@@ -94,15 +94,28 @@
   },
   "overrides": [
     {
-      "files": ["codemods/**/scripts/codemod.ts"],
+      "files": ["codemods/**/scripts/**/*.ts", "codemods/**/utils/**/*.ts"],
       "rules": {
         "typescript/no-deprecated": "off",
-        "typescript/require-await": "off"
+        "typescript/require-await": "off",
+        "typescript/restrict-template-expressions": "off",
+        "typescript/no-base-to-string": "off",
+        "typescript/array-type": "off",
+        "typescript/consistent-type-definitions": "off",
+        "eslint/curly": "off",
+        "eslint/radix": "off",
+        "import/no-duplicates": "off",
+        "unicorn/prefer-array-find": "off",
+        "unicorn/prefer-array-some": "off",
+        "unicorn/prefer-number-properties": "off",
+        "unicorn/prefer-string-slice": "off",
+        "unicorn/prefer-spread": "off"
       }
     },
     {
       "files": ["**/*.mjs"],
       "rules": {
+        "typescript/no-unsafe-argument": "off",
         "typescript/no-unsafe-call": "off",
         "typescript/no-unsafe-assignment": "off",
         "typescript/no-unsafe-member-access": "off"
