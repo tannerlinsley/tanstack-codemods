@@ -1,24 +1,4 @@
-/**
- * AG-UI client compliance migration (JSSG port of TanStack AI's jscodeshift
- * `ag-ui-compliance` transform).
- *
- *   1. useChat({ body }) → useChat({ forwardedProps })
- *   2. new ChatClient({ body }) → new ChatClient({ forwardedProps })
- *   3. client.updateOptions({ body }) → { forwardedProps }
- *      (when ChatClient is in scope from @tanstack/ai-client)
- *   4. chat.updateBody(x) → chat.updateForwardedProps(x)
- *      (when createChat is in scope from @tanstack/ai-svelte)
- *   5. chat({ conversationId }) → chat({ threadId })
- *      (when chat is in scope from @tanstack/ai)
- *
- * Origin gating uses JSSG semantic analysis (`definition()`) so barrel
- * re-exports and import aliases work — cases the jscodeshift port skips
- * (see TanStack/ai ag-ui-compliance README "Re-exports and aliases").
- *
- * Conflict handling: if both legacy and canonical keys are already present,
- * leave the property alone and warn.
- */
-import type { Edit, SgNode, SgRoot, Transform } from 'codemod:ast-grep'
+import type { Edit, SgNode, SgRoot, Codemod } from 'codemod:ast-grep'
 import type TSX from 'codemod:ast-grep/langs/tsx'
 
 // TODO(platform): promote object-literal helpers to @jssg/utils.
@@ -239,7 +219,7 @@ function applyRename(
   }
 }
 
-const transform: Transform<TSX> = async (root: SgRoot<TSX>) => {
+const transform: Codemod<TSX> = async (root: SgRoot<TSX>) => {
   const rootNode = root.root()
   const filePath = root.filename()
   const edits: Edit[] = []

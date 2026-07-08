@@ -4,7 +4,7 @@ Moves root-level `temperature` / `topP` / `maxTokens` off `chat()` / `ai()` / `g
 
 For ollama, renamed keys nest under `modelOptions.options`. Calls with an unresolvable adapter, non-literal `modelOptions`, or a key conflict are left untouched and reported.
 
-Callee origin uses [JSSG semantic analysis](https://docs.codemod.com/jssg/semantic-analysis) (`definition()`), so unlike the jscodeshift port this also covers:
+Callee origin uses [JSSG semantic analysis](https://docs.codemod.com/jssg/semantic-analysis) (`definition()`), so this also covers:
 
 - **Import aliases** — `import { chat as runChat } from '@tanstack/ai'`
 - **Barrel re-exports** — `export { chat } from '@tanstack/ai'` then import from `./ai`

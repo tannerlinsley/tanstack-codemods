@@ -10,7 +10,7 @@ Migrates TanStack AI client code to AG-UI–compliant field names.
 | `chat.updateBody(x)` (Svelte)           | `chat.updateForwardedProps(x)`                    |
 | `chat({ conversationId: x })`           | `chat({ threadId: x })`                           |
 
-Origin gating uses [JSSG semantic analysis](https://docs.codemod.com/jssg/semantic-analysis) (`definition()`), so unlike the jscodeshift port this also covers:
+Origin gating uses [JSSG semantic analysis](https://docs.codemod.com/jssg/semantic-analysis) (`definition()`), so this covers:
 
 - **Import aliases** — `import { useChat as useAiChat } from '@tanstack/ai-react'`
 - **Barrel re-exports** — `export { useChat } from '@tanstack/ai-react'` then import from `./ai`
