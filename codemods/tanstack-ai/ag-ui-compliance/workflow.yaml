@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/codemod/codemod/refs/heads/main/schemas/workflow.json
+
+version: '1'
+
+nodes:
+  - id: ag-ui-compliance
+    name: AG-UI client compliance renames
+    type: automatic
+    steps:
+      - name: Rename body → forwardedProps, conversationId → threadId, updateBody → updateForwardedProps
+        js-ast-grep:
+          js_file: scripts/codemod.ts
+          language: tsx
+          semantic_analysis: workspace
+          include:
+            - '**/*.tsx'
+            - '**/*.ts'
+            - '**/*.jsx'
+            - '**/*.js'
+          exclude:
+            - '**/node_modules/**'
+            - '**/dist/**'
+            - '**/build/**'
+            - '**/coverage/**'
+            - '**/.git/**'
+            - '**/*.d.ts'

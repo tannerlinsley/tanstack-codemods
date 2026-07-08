@@ -1,0 +1,25 @@
+schema_version: '1.0'
+
+name: 'ag-ui-compliance'
+version: '0.1.0'
+description: 'Migrate TanStack AI client APIs to AG-UI-compliant field names'
+author: 'Alex Bit <alex@codemod.com>'
+license: 'MIT'
+workflow: 'workflow.yaml'
+repository: 'https://github.com/codemod/tanstack-codemods/tree/main/codemods/tanstack-ai/ag-ui-compliance'
+
+targets:
+  languages: ['tsx', 'ts', 'jsx', 'js']
+
+keywords:
+  - tanstack
+  - tanstack-ai
+  - ag-ui
+  - migration
+  - transformation
+
+registry:
+  access: 'public'
+  visibility: 'public'
+
+capabilities: []

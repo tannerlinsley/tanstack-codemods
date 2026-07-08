@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/codemod/codemod/refs/heads/main/schemas/workflow.json
+
+version: '1'
+
+nodes:
+  - id: move-sampling-to-model-options
+    name: Move root sampling props into modelOptions
+    type: automatic
+    steps:
+      - name: Relocate temperature / topP / maxTokens into provider-native modelOptions
+        js-ast-grep:
+          js_file: scripts/codemod.ts
+          language: tsx
+          semantic_analysis: workspace
+          include:
+            - '**/*.tsx'
+            - '**/*.ts'
+            - '**/*.jsx'
+            - '**/*.js'
+          exclude:
+            - '**/node_modules/**'
+            - '**/dist/**'
+            - '**/build/**'
+            - '**/coverage/**'
+            - '**/.git/**'
+            - '**/*.d.ts'
