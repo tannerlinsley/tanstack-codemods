@@ -1,7 +1,7 @@
 schema_version: '1.0'
 
 name: 'ag-ui-compliance'
-version: '0.1.0'
+version: '0.1.1'
 description: 'Migrate TanStack AI client APIs to AG-UI-compliant field names'
 author: 'Alex Bit <alex@codemod.com>'
 license: 'MIT'
