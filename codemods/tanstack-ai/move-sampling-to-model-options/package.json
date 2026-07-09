@@ -1,6 +1,6 @@
 {
   "name": "move-sampling-to-model-options",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Move TanStack AI root sampling props into provider-native modelOptions",
   "type": "module",
   "scripts": {

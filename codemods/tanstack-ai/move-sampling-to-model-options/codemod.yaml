@@ -1,7 +1,7 @@
 schema_version: '1.0'
 
 name: 'move-sampling-to-model-options'
-version: '0.1.1'
+version: '0.2.0'
 description: 'Move TanStack AI root sampling props into provider-native modelOptions'
 author: 'Alex Bit <alex@codemod.com>'
 license: 'MIT'

@@ -1,6 +1,6 @@
 {
   "name": "ag-ui-compliance",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Migrate TanStack AI client APIs to AG-UI-compliant field names",
   "type": "module",
   "scripts": {
