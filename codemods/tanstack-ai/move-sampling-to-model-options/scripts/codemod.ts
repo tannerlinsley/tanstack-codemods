@@ -1,21 +1,4 @@
-/**
- * Move root sampling options into provider-native `modelOptions`
- * (JSSG port of TanStack AI's jscodeshift `move-sampling-to-model-options`).
- *
- * Relocates `temperature` / `topP` / `maxTokens` off
- * `chat()` / `ai()` / `generate()` / `createChatOptions()` into `modelOptions`,
- * renaming per provider resolved from `adapter: <factory>(...)`.
- *
- * Callee origin uses JSSG semantic analysis (`definition()`) so barrel
- * re-exports and import aliases work — cases the jscodeshift port skips
- * when the helper is not imported directly from `@tanstack/ai`.
- *
- * Skip + warn (never partially transform a single call) when:
- *   - the adapter can't be resolved to a known provider factory
- *   - `modelOptions` exists but isn't a plain object literal
- *   - a target renamed key already exists in the destination object
- */
-import type { Edit, SgNode, SgRoot, Transform } from 'codemod:ast-grep'
+import type { Edit, SgNode, SgRoot, Codemod } from 'codemod:ast-grep'
 import type TSX from 'codemod:ast-grep/langs/tsx'
 
 // TODO(platform): promote object-literal helpers to @jssg/utils.
@@ -24,6 +7,7 @@ type ObjectProp =
   | { kind: 'pair'; node: SgNode<TSX>; key: SgNode<TSX>; value: SgNode<TSX> }
   | { kind: 'shorthand'; node: SgNode<TSX> }
 
+/** Named identifier props only — used for lookups / sampling-key detection. */
 function listObjectProps(obj: SgNode<TSX>): ObjectProp[] {
   const out: ObjectProp[] = []
   for (const child of obj.children()) {
@@ -38,6 +22,34 @@ function listObjectProps(obj: SgNode<TSX>): ObjectProp[] {
     if (child.kind() === 'shorthand_property_identifier') {
       out.push({ kind: 'shorthand', node: child })
     }
+  }
+  return out
+}
+
+/**
+ * Every object entry (pairs, shorthand, spreads, string/computed keys), in
+ * source order. `name` is set only for plain identifier keys so callers can
+ * filter known props without dropping spreads / exotic keys on rebuild.
+ */
+function listObjectEntries(obj: SgNode<TSX>): Array<{ node: SgNode<TSX>; name: string | null }> {
+  const out: Array<{ node: SgNode<TSX>; name: string | null }> = []
+  for (const child of obj.children()) {
+    const kind = child.kind()
+    if (kind === '{' || kind === '}' || kind === ',') continue
+    if (kind === 'pair') {
+      const key = child.child(0)
+      let name: string | null = null
+      if (key && (key.kind() === 'property_identifier' || key.kind() === 'identifier')) {
+        name = key.text()
+      }
+      out.push({ node: child, name })
+      continue
+    }
+    if (kind === 'shorthand_property_identifier') {
+      out.push({ node: child, name: child.text() })
+      continue
+    }
+    out.push({ node: child, name: null })
   }
   return out
 }
@@ -143,10 +155,29 @@ function moduleFromImportOrExport(stmt: SgNode<TSX>): string | null {
   return str ? getStringContent(str) : null
 }
 
+/**
+ * Package export name from an import/export specifier.
+ * `import { openaiText as x }` / `export { openaiText as x }` → `openaiText`.
+ */
 function importedNameFromSpecifier(spec: SgNode<TSX>, localName: string): string {
   if (spec.kind() === 'import_specifier' || spec.kind() === 'export_specifier') {
     const first = spec.findAll({ rule: { kind: 'identifier' } }).at(0)
     if (first) return first.text()
+  }
+  return localName
+}
+
+/**
+ * When `definition()` lands on a whole import/export statement, recover the
+ * original package export name for the local binding `localName`.
+ */
+function importedNameFromStatement(stmt: SgNode<TSX>, localName: string): string {
+  for (const kind of ['import_specifier', 'export_specifier'] as const) {
+    for (const spec of stmt.findAll({ rule: { kind } })) {
+      const idents = spec.findAll({ rule: { kind: 'identifier' } })
+      const local = idents.at(-1)?.text()
+      if (local === localName) return importedNameFromSpecifier(spec, localName)
+    }
   }
   return localName
 }
@@ -157,7 +188,11 @@ function originFromImportOrExportNode(node: SgNode<TSX>, fallbackLocalName: stri
   if (exportStmt) {
     const module = moduleFromImportOrExport(exportStmt)
     if (module) {
-      return { module, importedName: importedNameFromSpecifier(node, fallbackLocalName) }
+      const importedName =
+        node.kind() === 'export_specifier'
+          ? importedNameFromSpecifier(node, fallbackLocalName)
+          : importedNameFromStatement(exportStmt, fallbackLocalName)
+      return { module, importedName }
     }
   }
 
@@ -166,7 +201,11 @@ function originFromImportOrExportNode(node: SgNode<TSX>, fallbackLocalName: stri
   if (importStmt) {
     const module = moduleFromImportOrExport(importStmt)
     if (module) {
-      return { module, importedName: importedNameFromSpecifier(node, fallbackLocalName) }
+      const importedName =
+        node.kind() === 'import_specifier'
+          ? importedNameFromSpecifier(node, fallbackLocalName)
+          : importedNameFromStatement(importStmt, fallbackLocalName)
+      return { module, importedName }
     }
   }
 
@@ -204,13 +243,12 @@ function resolveSymbolOrigin(ident: SgNode<TSX>): SymbolOrigin | null {
       if (importedIdent) {
         const next = importedIdent.definition()
         if (next && (next.kind === 'import' || next.kind === 'external')) {
-          const fromStmt = originFromImportOrExportNode(next.node, fallbackName)
-          if (fromStmt) {
-            return {
-              module: fromStmt.module,
-              importedName: importedNameFromSpecifier(def.node, fromStmt.importedName),
-            }
-          }
+          // Prefer the origin from the next hop (package re-export / import).
+          // Do not re-derive the name from `def.node` — for
+          // `import { createOpenAI } from './barrel'` that would keep the
+          // local alias instead of the package export (`openaiText`).
+          const fromStmt = originFromImportOrExportNode(next.node, importedIdent.text())
+          if (fromStmt) return fromStmt
         }
         current = importedIdent
         continue
@@ -239,6 +277,14 @@ function resolveProvider(obj: SgNode<TSX>): Provider | null {
   if (value.kind() !== 'call_expression') return null
   const callee = value.child(0)
   if (callee?.kind() !== 'identifier') return null
+
+  // Prefer package export name via semantic analysis so aliases / barrel
+  // re-exports still resolve (jscodeshift only matched local identifier text).
+  const origin = resolveSymbolOrigin(callee)
+  if (origin) {
+    const fromImported = FACTORY_TO_PROVIDER[origin.importedName]
+    if (fromImported) return fromImported
+  }
   return FACTORY_TO_PROVIDER[callee.text()] ?? null
 }
 
@@ -267,10 +313,25 @@ function rebuildObjectWithout(obj: SgNode<TSX>, removeNames: Set<string>, append
   const propIndent = objectPropIndent(obj)
   const closeIndent = objectCloseIndent(obj)
   const kept: string[] = []
-  for (const prop of listObjectProps(obj)) {
-    const name = prop.kind === 'shorthand' ? prop.node.text() : prop.key.text()
-    if (removeNames.has(name)) continue
-    kept.push(prop.node.text())
+  for (const entry of listObjectEntries(obj)) {
+    if (entry.name !== null && removeNames.has(entry.name)) continue
+    kept.push(entry.node.text())
+  }
+  return joinObjectProps(propIndent, closeIndent, [...kept, ...appendProps])
+}
+
+/** Rebuild an object literal, optionally dropping named identifier keys. */
+function rebuildObjectEntries(
+  obj: SgNode<TSX>,
+  propIndent: string,
+  closeIndent: string,
+  removeNames: Set<string>,
+  appendProps: string[],
+): string {
+  const kept: string[] = []
+  for (const entry of listObjectEntries(obj)) {
+    if (entry.name !== null && removeNames.has(entry.name)) continue
+    kept.push(entry.node.text())
   }
   return joinObjectProps(propIndent, closeIndent, [...kept, ...appendProps])
 }
@@ -354,26 +415,36 @@ function transformCallObject(obj: SgNode<TSX>, calleeName: string, filePath: str
   if (nested) {
     let optionsInner: string
     if (nestedOptionsObj) {
-      const existing = listObjectProps(nestedOptionsObj).map((p) => p.node.text())
-      optionsInner = joinObjectProps(optionsPropIndent, optionsCloseIndent, [...existing, ...movedPropTexts])
+      optionsInner = rebuildObjectEntries(
+        nestedOptionsObj,
+        optionsPropIndent,
+        optionsCloseIndent,
+        new Set(),
+        movedPropTexts,
+      )
     } else {
       optionsInner = joinObjectProps(optionsPropIndent, optionsCloseIndent, movedPropTexts)
     }
 
     if (modelOptionsObj) {
-      const withoutOptions = listObjectProps(modelOptionsObj)
-        .filter((p) => (p.kind === 'shorthand' ? p.node.text() : p.key.text()) !== 'options')
-        .map((p) => p.node.text())
-      modelOptionsText = joinObjectProps(modelPropIndent, modelCloseIndent, [
-        ...withoutOptions,
-        `options: ${optionsInner}`,
-      ])
+      modelOptionsText = rebuildObjectEntries(
+        modelOptionsObj,
+        modelPropIndent,
+        modelCloseIndent,
+        new Set(['options']),
+        [`options: ${optionsInner}`],
+      )
     } else {
       modelOptionsText = joinObjectProps(modelPropIndent, modelCloseIndent, [`options: ${optionsInner}`])
     }
   } else if (modelOptionsObj) {
-    const existing = listObjectProps(modelOptionsObj).map((p) => p.node.text())
-    modelOptionsText = joinObjectProps(modelPropIndent, modelCloseIndent, [...existing, ...movedPropTexts])
+    modelOptionsText = rebuildObjectEntries(
+      modelOptionsObj,
+      modelPropIndent,
+      modelCloseIndent,
+      new Set(),
+      movedPropTexts,
+    )
   } else {
     modelOptionsText = joinObjectProps(modelPropIndent, modelCloseIndent, movedPropTexts)
   }
@@ -384,7 +455,7 @@ function transformCallObject(obj: SgNode<TSX>, calleeName: string, filePath: str
   return obj.replace(rebuildObjectWithout(obj, removeNames, [`modelOptions: ${modelOptionsText}`]))
 }
 
-const transform: Transform<TSX> = async (root: SgRoot<TSX>) => {
+const transform: Codemod<TSX> = async (root: SgRoot<TSX>) => {
   const rootNode = root.root()
   const filePath = root.filename()
   const edits: Edit[] = []

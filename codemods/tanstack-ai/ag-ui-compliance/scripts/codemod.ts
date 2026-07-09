@@ -87,11 +87,30 @@ function moduleFromImportOrExport(stmt: SgNode<TSX>): string | null {
  * When `definition()` lands on an import/export specifier, recover the
  * original package export name (`useChat` in `import { useChat as x }`).
  */
+/**
+ * Package export name from an import/export specifier.
+ * `import { useChat as x }` / `export { useChat as x }` → `useChat`.
+ */
 function importedNameFromSpecifier(spec: SgNode<TSX>, localName: string): string {
   if (spec.kind() === 'import_specifier' || spec.kind() === 'export_specifier') {
     const idents = spec.findAll({ rule: { kind: 'identifier' } })
     const first = idents.at(0)
     if (first) return first.text()
+  }
+  return localName
+}
+
+/**
+ * When `definition()` lands on a whole import/export statement, recover the
+ * original package export name for the local binding `localName`.
+ */
+function importedNameFromStatement(stmt: SgNode<TSX>, localName: string): string {
+  for (const kind of ['import_specifier', 'export_specifier'] as const) {
+    for (const spec of stmt.findAll({ rule: { kind } })) {
+      const idents = spec.findAll({ rule: { kind: 'identifier' } })
+      const local = idents.at(-1)?.text()
+      if (local === localName) return importedNameFromSpecifier(spec, localName)
+    }
   }
   return localName
 }
@@ -102,7 +121,11 @@ function originFromImportOrExportNode(node: SgNode<TSX>, fallbackLocalName: stri
   if (exportStmt) {
     const module = moduleFromImportOrExport(exportStmt)
     if (module) {
-      return { module, importedName: importedNameFromSpecifier(node, fallbackLocalName) }
+      const importedName =
+        node.kind() === 'export_specifier'
+          ? importedNameFromSpecifier(node, fallbackLocalName)
+          : importedNameFromStatement(exportStmt, fallbackLocalName)
+      return { module, importedName }
     }
   }
 
@@ -111,7 +134,11 @@ function originFromImportOrExportNode(node: SgNode<TSX>, fallbackLocalName: stri
   if (importStmt) {
     const module = moduleFromImportOrExport(importStmt)
     if (module) {
-      return { module, importedName: importedNameFromSpecifier(node, fallbackLocalName) }
+      const importedName =
+        node.kind() === 'import_specifier'
+          ? importedNameFromSpecifier(node, fallbackLocalName)
+          : importedNameFromStatement(importStmt, fallbackLocalName)
+      return { module, importedName }
     }
   }
 
@@ -153,14 +180,11 @@ function resolveSymbolOrigin(ident: SgNode<TSX>): SymbolOrigin | null {
       if (importedIdent) {
         const next = importedIdent.definition()
         if (next && (next.kind === 'import' || next.kind === 'external')) {
-          const fromStmt = originFromImportOrExportNode(next.node, fallbackName)
-          if (fromStmt) {
-            // Prefer the package export name from the specifier text.
-            return {
-              module: fromStmt.module,
-              importedName: importedNameFromSpecifier(def.node, fromStmt.importedName),
-            }
-          }
+          // Prefer the origin from the next hop (package re-export / import).
+          // Do not re-derive the name from `def.node` — a local barrel import
+          // alias would otherwise shadow the real package export name.
+          const fromStmt = originFromImportOrExportNode(next.node, importedIdent.text())
+          if (fromStmt) return fromStmt
         }
         current = importedIdent
         continue
@@ -297,6 +321,9 @@ const transform: Codemod<TSX> = async (root: SgRoot<TSX>) => {
   }
 
   if (hasCreateChat) {
+    // Only rename method *calls* (`chat.updateBody(...)`), not bare property
+    // accesses (`const fn = chat.updateBody`) — the jscodeshift port rewrote
+    // every MemberExpression and could break method references.
     for (const prop of rootNode.findAll({
       rule: {
         kind: 'property_identifier',
@@ -304,10 +331,13 @@ const transform: Codemod<TSX> = async (root: SgRoot<TSX>) => {
         inside: { kind: 'member_expression' },
       },
     })) {
-      const parent = prop.parent()
-      if (parent?.kind() !== 'member_expression') continue
-      const field = parent.field('property')
+      const member = prop.parent()
+      if (member?.kind() !== 'member_expression') continue
+      const field = member.field('property')
       if (field?.id() !== prop.id()) continue
+      const call = member.parent()
+      if (call?.kind() !== 'call_expression') continue
+      if (call.child(0)?.id() !== member.id()) continue
       edits.push(prop.replace('updateForwardedProps'))
     }
   }
