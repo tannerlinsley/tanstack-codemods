@@ -1,0 +1,14 @@
+{
+  "name": "move-sampling-to-model-options",
+  "version": "0.1.0",
+  "description": "Move TanStack AI root sampling props into provider-native modelOptions",
+  "type": "module",
+  "scripts": {
+    "test": "codemod jssg test -l tsx ./scripts/codemod.ts ./tests --semantic-workspace",
+    "check-types": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@codemod.com/jssg-types": "catalog:",
+    "typescript": "catalog:"
+  }
+}
